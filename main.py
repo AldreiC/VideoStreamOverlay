@@ -44,6 +44,10 @@ import numpy as np
 # Get the video feed from the web camera
 video = cv2.VideoCapture("AldreiC - RoadVideo.MOV")
 
+frame_count = 0
+neg_lanes = []
+pos_lanes = []
+
 
 def detect_shapes(img):
     # Detect lines in the input image and output the image with two blue parallel lines and a red centerline
@@ -52,9 +56,9 @@ def detect_shapes(img):
     gray_img = preprocess(img)
 
     try:
-        lines = cv2.HoughLinesP(gray_img, 1, np.pi / 180, threshold=10, minLineLength=25, maxLineGap=20)
-        pos_line = [0, 0, 0]
-        neg_line = [0, 0, 0]
+        lines = cv2.HoughLinesP(gray_img, 1, np.pi / 180, threshold=10, minLineLength=10, maxLineGap=30)
+        pos_line = []
+        neg_line = []
 
         for line in lines:
             x1, y1, x2, y2 = line[0]
@@ -63,134 +67,157 @@ def detect_shapes(img):
                 m = (y2 - y1) / (x2 - x1)
                 if 0.4 < abs(m) < 5:
                     b = y1 - (m * x1)
-                    if m < 0:
-                        neg_line[0] += m
-                        neg_line[1] += b
-                        neg_line[2] += 1
-                    elif m > 0:
-                        pos_line[0] += m
-                        pos_line[1] += b
-                        pos_line[2] += 1
+                    if m < 0 and x1 < width * 0.4 and x2 < width * 0.4:
+                        neg_line.append([m, b])
+                    elif m > 0 and x1 > width * 0.4 and x2 > width * 0.4:
+                        pos_line.append([m, b])
 
-        if neg_line[2] != 0 and pos_line[2] != 0:
-            neg_avg_m = neg_line[0] / neg_line[2]
-            neg_avg_b = neg_line[1] / neg_line[2]
-            pos_avg_m = pos_line[0] / pos_line[2]
-            pos_avg_b = pos_line[1] / pos_line[2]
+        global frame_count
 
-            cv2.line(img, (int((height * 0.6 - neg_avg_b) / neg_avg_m), int(height * 0.6)),
-                     (int((height - neg_avg_b) // neg_avg_m), height), (255, 0, 0), 2)
-            cv2.line(img, (int((height * 0.6 - pos_avg_b) / pos_avg_m), int(height * 0.6)),
-                     (int((height - pos_avg_b) / pos_avg_m), height),
-                     (255, 0, 0), 2)
-            cv2.line(img, (
-                int((((height * 0.6 - neg_avg_b) / neg_avg_m) + ((height * 0.6 - pos_avg_b) / pos_avg_m)) / 2),
-                int(height * 0.6)),
-                     (int((((height - neg_avg_b) / neg_avg_m) + ((height - pos_avg_b) / pos_avg_m)) / 2), height),
-                     (0, 255, 255), 2)
+        if len(neg_line) > 0:
+            neg_line.sort(key=lambda neg: neg[0])
+            neg_avg_m = neg_line[len(neg_line) // 2][0]
 
+            neg_line.sort(key=lambda neg: neg[1])
+            neg_avg_b = neg_line[len(neg_line) // 2][1]
+        else:
+            neg_avg_m = neg_lanes[frame_count - 1][0]
+            neg_avg_b = neg_lanes[frame_count - 1][1]
 
+        if len(pos_line) > 0:
+            pos_line.sort(key=lambda pos: pos[0])
+            pos_avg_m = pos_line[len(pos_line) // 2][0]
 
+            pos_line.sort(key=lambda pos: pos[1])
+            pos_avg_b = pos_line[len(pos_line) // 2][1]
+        else:
+            pos_avg_m = pos_lanes[frame_count - 1][0]
+            pos_avg_b = pos_lanes[frame_count - 1][1]
 
+        cv2.line(img, (int((height * 0.6 - neg_avg_b) / neg_avg_m), int(height * 0.6)),
+                 (int((height - neg_avg_b) / neg_avg_m), height), (255, 0, 0), 2)
+        cv2.line(img, (int((height * 0.6 - pos_avg_b) / pos_avg_m), int(height * 0.6)),
+                 (int((height - pos_avg_b) / pos_avg_m), height),
+                 (255, 0, 0), 2)
+        cv2.line(img, (
+            int((((height * 0.6 - neg_avg_b) / neg_avg_m) + ((height * 0.6 - pos_avg_b) / pos_avg_m)) / 2),
+            int(height * 0.6)),
+                 (int((((height - neg_avg_b) / neg_avg_m) + ((height - pos_avg_b) / pos_avg_m)) / 2), height),
+                 (0, 255, 255), 2)
+
+        neg_lanes.append([neg_avg_m, neg_avg_b])
+        pos_lanes.append([pos_avg_m, pos_avg_b])
+
+        frame_count += 1
     except:
         pass
 
-    try:
-        circles = cv2.HoughCircles(gray_img, cv2.HOUGH_GRADIENT, 1, 100, param1=150, param2=40, minRadius=50,
-                                   maxRadius=200)
-        try:
-            circles = np.uint16(np.around(circles))
-        except:
-            circles = []
-
-        # For each detected circle in the array, overlay a blue circle with the same dimensions along with a red center
-        try:
-            for circle in circles[0][:]:
-                cv2.circle(img, (circle[0], circle[1]), circle[2], (0, 255, 0), 2)
-                cv2.circle(img, (circle[0], circle[1]), 1, (255, 0, 255), 3)
+    """try:
+     circles = cv2.HoughCircles(gray_img, cv2.HOUGH_GRADIENT, 1, 100, param1=150, param2=40, minRadius=50,
+                                maxRadius=200)
+     try:
+         circles = np.uint16(np.around(circles))
+     except:
+         circles = []
 
 
 
 
-        except:
-            pass
-    except:
-        pass
+     # For each detected circle in the array, overlay a blue circle with the same dimensions along with a red center
+     try:
+         for circle in circles[0][:]:
+             cv2.circle(img, (circle[0], circle[1]), circle[2], (0, 255, 0), 2)
+             cv2.circle(img, (circle[0], circle[1]), 1, (255, 0, 255), 3)
+     except:
+         pass
+ except:
+     pass"""
 
-    try:
-        contours, hierarchy = cv2.findContours(gray_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contour_list = []
+    """try:
+       points = np.array([[int(width * 0.29), int(height * 0.65)], [int(width * 0.29), int(height * 0.90)],
+                          [int(width * 0.55), int(height * 0.90)], [int(width * 0.55), int(height * 0.65)]], np.int32)
 
-        # Detect all long, curved contours around the middle of the screen
-        for contour in contours:
-            epsilon = 0.001 * cv2.arcLength(contour, False)
-            approximate_contour = cv2.approxPolyDP(contour, epsilon, False)
 
-            length = cv2.arcLength(approximate_contour, False)
-            coordinate_total = approximate_contour[0][0][0] + approximate_contour[0][0][1]
-            if length <= 500 or coordinate_total <= (width + height) * 0.2 or coordinate_total >= (
-                    width + height) * 0.8:
-                continue
+       trap_mask = np.zeros(gray_img.shape[:2], dtype="uint8")
+       cv2.fillPoly(trap_mask, [points], (255, 255, 255))
+       gray_img = cv2.bitwise_and(gray_img, gray_img, mask=trap_mask)
 
-            contour_list.append(approximate_contour)
-            cv2.drawContours(img, [approximate_contour], -1, (0, 0, 255), 2)
 
-        # Find and display the midline between two contours
-        c_line1 = contour_list[0]
-        c_line2 = contour_list[1]
+       contours, hierarchy = cv2.findContours(gray_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+       contour_list = []
 
-        midline = []
-        for point1, point2 in zip(c_line1, c_line2):
-            m_pointx = (point1[0][0] + point2[0][0]) // 2
-            m_pointy = (point1[0][1] + point2[0][1]) // 2
-            midline.append([m_pointx, m_pointy])
 
-        midline = np.array(midline, dtype=np.int32)
-        cv2.polylines(img, [midline], isClosed=False, color=(255, 255, 0), thickness=2)
-    except:
-        pass
+       # Detect all long, curved contours around the middle of the screen
+       for contour in contours:
+           epsilon = 0.001 * cv2.arcLength(contour, False)
+           approximate_contour = cv2.approxPolyDP(contour, epsilon, False)
+
+
+           length = cv2.arcLength(approximate_contour, False)
+
+
+           if length <= 500:
+               continue
+
+
+           contour_list.append(approximate_contour)
+           cv2.drawContours(img, [approximate_contour], -1, (0, 0, 255), 2)
+
+
+       # Find and display the midline between two contours
+       c_line1 = contour_list[0]
+       c_line2 = contour_list[1]
+
+
+       midline = []
+       for point1, point2 in zip(c_line1, c_line2):
+           m_pointx = (point1[0][0] + point2[0][0]) // 2
+           m_pointy = (point1[0][1] + point2[0][1]) // 2
+           midline.append([m_pointx, m_pointy])
+
+
+       midline = np.array(midline, dtype=np.int32)
+       cv2.polylines(img, [midline], isClosed=False, color=(255, 255, 0), thickness=2)
+   except:
+       pass"""
 
     return img
 
 
 def preprocess(img):
     gray_img = img.copy()
-    hsv = cv2.cvtColor(gray_img, cv2.COLOR_BGR2HSV)
-    hsv = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    lower_white = np.array([0, 100, 120], dtype="uint8")
-    upper_white = np.array([255, 160, 160], dtype="uint8")
-    white_mask = cv2.inRange(hsv, lower_white, upper_white)
-    lower_gray = np.array([0, 170, 100], dtype="uint8")
-    upper_gray = np.array([255, 200, 220], dtype="uint8")
-    gray_mask = cv2.inRange(hsv, lower_gray, upper_gray)
-    lower_yellow = np.array([20, 100, 50], dtype="uint8")
-    upper_yellow = np.array([80, 255, 255], dtype="uint8")
-    yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
-    combined_mask = cv2.bitwise_or(white_mask, gray_mask)
-    combined_mask = cv2.bitwise_or(combined_mask, yellow_mask)
-    hsv = cv2.bitwise_and(hsv, hsv, mask=combined_mask)
-    cv2.imshow("hsv_after", hsv)
+    gray_img = cv2.cvtColor(gray_img, cv2.COLOR_BGR2GRAY)
+    blue_img = np.zeros((height, width, 3), dtype="uint8")
+    blue_img[:, :, 0] = gray_img
 
-    kernel = np.ones((7, 7), np.uint8)
-    hsv = cv2.erode(hsv, kernel, iterations=1)
+    lower_blue = np.array([125, 0, 0], dtype="uint8")
+    upper_blue = np.array([175, 0, 0], dtype="uint8")
+    blue_mask = cv2.inRange(blue_img, lower_blue, upper_blue)
+    blue_img = cv2.bitwise_and(blue_img, blue_img, mask=blue_mask)
 
-    gray_img = cv2.cvtColor(hsv, cv2.COLOR_RGB2GRAY)
-    gray_img = cv2.GaussianBlur(gray_img, (7, 7), 0)
+    kernel = np.ones((3, 3), np.uint8)
+    blue_img = cv2.erode(blue_img, kernel, iterations=1)
+
+    gray_img = cv2.cvtColor(blue_img, cv2.COLOR_RGB2GRAY)
+    gray_img = cv2.GaussianBlur(gray_img, (5, 5), 0)
 
     kernel = np.ones((11, 11), np.uint8)
     gray_img = cv2.dilate(gray_img, kernel, iterations=1)
     gray_img = cv2.erode(gray_img, kernel, iterations=1)
 
-    thresh_mask = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 7, -1)
+    thresh_mask = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 17, -1)
     gray_img = cv2.bitwise_and(gray_img, gray_img, mask=thresh_mask)
-
-    kernel = np.ones((5, 5), np.uint8)
-    gray_img = cv2.Canny(gray_img, 50, 150, L2gradient=False)
+    kernel = np.ones((9, 9), np.uint8)
     gray_img = cv2.dilate(gray_img, kernel, iterations=1)
-    gray_img = cv2.erode(gray_img, kernel, iterations=1)
+    kernel = np.ones((5, 5), np.uint8)
+    gray_img = cv2.erode(gray_img, kernel, iterations=2)
 
-    points = np.array([[int(width * 0.33), int(height * 0.65)], [int(width * 0.10), int(height * 0.88)],
-                       [int(width * 0.77), int(height * 0.88)], [int(width * 0.55), int(height * 0.65)]])
+    gray_img = cv2.Canny(gray_img, 50, 150, apertureSize=7)
+
+    points = np.array([[int(width * 0.30), int(height * 0.65)], [int(width * 0.10), int(height * 0.90)],
+                       [int(width * 0.30), int(height * 0.90)], [int(width * 0.40), int(height * 0.65)],
+                       [int(width * 0.53), int(height * 0.90)], [int(width * 0.82), int(height * 0.90)],
+                       [int(width * 0.55), int(height * 0.65)]])
 
     trap_mask = np.zeros(gray_img.shape[:2], dtype="uint8")
     cv2.fillPoly(trap_mask, [points], (255, 255, 255))
@@ -220,10 +247,14 @@ def show_arrow(img):
 while True:
     # Constantly reads the webcam feed and creates individual images for processing
 
-    _, image = video.read()
-    height, width = image.shape[:2]
-    imageResult = detect_shapes(image)
-    show_arrow(image)
+    success, image = video.read()
+
+    if success:
+        height, width = image.shape[:2]
+        imageResult = detect_shapes(image)
+        show_arrow(image)
+    else:
+        break
 
     # Closes the window when the space bar is pressed
     if cv2.waitKey(1) == ord(' '):
